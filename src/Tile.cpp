@@ -24,7 +24,7 @@ double Tile::LitAfterClicking(double lastTime)
     lastTime = now;
 
     color.a = 100;
-    std::cout << "Temporal";
+    // std::cout << "Temporal";
     isLit = false;
   }
   return lastTime;

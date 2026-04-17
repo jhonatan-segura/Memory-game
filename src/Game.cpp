@@ -5,76 +5,115 @@
 
 Game::Game()
 {
-  InitGame();
+  InitGame(false);
 }
 
-void Game::InitGame()
+void Game::InitGame(bool restarting)
 {
-  tiles = CreateTiles();
-  progressBar = ProgressBar((Vector2){0, 0}, (Vector2){GetScreenWidth(), 20}, WHITE);
-  gameState = CPU_TURN;
+  if (!restarting) {
+    tiles = CreateTiles();
+  }
+  progressBar = ProgressBar((Vector2){0, 0}, (Vector2){GetScreenWidth(), 10}, WHITE);
+  gameTurn = CPU_TURN;
+  running = true;
   turningOff = false;
   isDelayTurnSwitchActive = false;
-  remainingTimeProgressBar = 10.0;
+  gameStarted = false;
+  timePerRound = 10.0;
+  remainingTimeProgressBar = timePerRound;
   timeAtTurnSwitch = 0;
+  score = 0;
   correctPlayerTilesCount = 0;
   tileToLitIndex = 0;
-  lastTimeDisplayAllTiles = GetTime();
-  // lastTimeDisplayTile = GetTime();
-  for (int i = 0; i < 3; i++)
-  {
-    AddNewCPUMove();
-  }
-  // AddNewCPUMove();
-
-  // cpuTiles.push_back(0);
-  // cpuTiles.push_back(0);
-  // cpuTiles.push_back(0);
+  lastTime = GetTime();
+  turnedOnDuration = .8;
+  turnedOffDuration = .3;
+  Rectangle popUpRect = (Rectangle){
+      .x = GetScreenWidth() / 2 - 240,
+      .y = GetScreenHeight() / 2 - 125,
+      .width = 480,
+      .height = 250};
+  popUp = PopUp(popUpRect, "Has perdido", "Presiona Enter para comenzar de nuevo.", "Reiniciar");
+  AddNewCPUMove();
 }
 
 void Game::Update()
 {
-  if (gameState == PLAYER_TURN)
+  if (gameTurn == PLAYER_TURN && !isDelayTurnSwitchActive && running)
   {
-    double now = GetTime();
-    double duration = GetFrameTime();
-    if (now - timeAtTurnSwitch >= duration)
-    {
-      timeAtTurnSwitch = GetTime();
-      remainingTimeProgressBar = remainingTimeProgressBar - duration;
-      double barPercentage = remainingTimeProgressBar * 100.0 / 10.0;
-      double result = 800.0 * (barPercentage / 100.0);
-      progressBar.SetSize((Vector2){result, 20});
-    }
+    remainingTimeProgressBar -= GetFrameTime();
+    double barPercentage = remainingTimeProgressBar / timePerRound;
+    double result = 800.0 * barPercentage;
+    progressBar.SetSize((Vector2){result, 10});
   }
 }
 
-void Game::Draw()
+void Game::Draw(Shader shader, int colorLoc, int strengthLoc)
 {
+  if (!gameStarted)
+  {
+    InitialDelay();
+  }
+
   progressBar.Draw();
   for (auto &tile : tiles)
   {
-    if (tile.IsLit() && gameState == PLAYER_TURN)
+    if (tile.IsLit() && gameTurn == PLAYER_TURN)
     {
-      // std::cout << "celda iluminada" << std::endl;
-      lastTimeDisplayAllTiles = tile.LitAfterClicking(lastTimeDisplayAllTiles);
+      lastTime = tile.LitAfterClicking(lastTime);
       if (!tile.IsLit())
       {
         CheckUpdateTurn();
       }
+
+      // Vector2 pos = (Vector2) {0,0};
+      // Vector2 size = (Vector2) {50,50};
+
+      // SetShaderValue(shader, colorLoc, &pos, SHADER_UNIFORM_VEC2);
+      // SetShaderValue(shader, strengthLoc, &size, SHADER_UNIFORM_VEC2);
+      // BeginShaderMode(shader);
+      // tile.Draw();
+      // EndShaderMode();
+
+      // Image img = GenImageColor(1, 1, WHITE);
+      // Texture2D tex = LoadTextureFromImage(img);
+      // UnloadImage(img);
+      // BeginShaderMode(shader);
+
+      // DrawTexturePro(
+      //     tex,
+      //     (Rectangle){0, 0, 1, 1},                                                 // source
+      //     (Rectangle){0, 0, 100, 100}, // destino
+      //     (Vector2){0, 0},
+      //     0.0f,
+      //     WHITE);
+
+      // EndShaderMode();
     }
+    // else
+    // {
+    //   tile.Draw();
+    // }
     tile.Draw();
   }
-  if (isDelayTurnSwitchActive)
-  {
-    DelayTurnSwitch(CPU_TURN);
-  }
+  DelayTurnSwitch(CPU_TURN);
   DisplayTilesInOrder();
+
+  if (score > 0)
+  {
+    const char *textScore = TextFormat("%d", score);
+    DrawText(textScore, GetScreenWidth() / 2 - TextLength(textScore) / 2, 20, 36, WHITE);
+  }
+
+  if (!running)
+  {
+    popUp.Draw();
+  }
 }
 
 void Game::HandleInput()
 {
-  if (gameState == CPU_TURN)
+  if (gameTurn == CPU_TURN)
     return;
 
   if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
@@ -87,16 +126,20 @@ void Game::HandleInput()
         if (cpuTiles.at(correctPlayerTilesCount++) == i)
         {
           tile.SetIsLit(true);
-          playerTiles.push_back(i);
-          lastTimeDisplayAllTiles = GetTime();
+          lastTime = GetTime();
         }
         else
         {
-          std::cout << "no es el valor correcto" << std::endl;
           correctPlayerTilesCount = 0;
+          running = false;
         }
       }
     }
+  }
+
+  if (IsKeyReleased(KEY_ENTER) && !running) {
+    cpuTiles.clear();
+    InitGame(true);
   }
 }
 
@@ -136,19 +179,29 @@ void Game::AddNewCPUMove()
 {
   int tilesIndex = GetRandomValue(0, 8);
   cpuTiles.push_back(tilesIndex);
-  std::cout << tilesIndex << std::endl;
+}
+
+void Game::InitialDelay()
+{
+  double now = GetTime();
+  double duration = 1.0;
+  if (now - lastTime >= duration)
+  {
+    lastTime = now;
+    gameStarted = true;
+  }
 }
 
 void Game::DisplayTilesInOrder()
 {
-  if (gameState == PLAYER_TURN)
+  if (gameTurn == PLAYER_TURN || !gameStarted)
     return;
 
   double now = GetTime();
-  double duration = turningOff ? .8 : .3;
-  if (now - lastTimeDisplayAllTiles >= duration)
+  double duration = turningOff ? turnedOnDuration : turnedOffDuration;
+  if (now - lastTime >= duration)
   {
-    lastTimeDisplayAllTiles = now;
+    lastTime = now;
 
     if (tileToLitIndex > 0 && turningOff)
     {
@@ -156,7 +209,7 @@ void Game::DisplayTilesInOrder()
       if (tileToLitIndex == cpuTiles.size())
       {
         tileToLitIndex = 0;
-        gameState = PLAYER_TURN;
+        gameTurn = PLAYER_TURN;
         timeAtTurnSwitch = GetTime();
       }
     }
@@ -165,7 +218,6 @@ void Game::DisplayTilesInOrder()
       tiles.at(cpuTiles.at(tileToLitIndex++)).TurnOnTile();
     }
     turningOff = !turningOff;
-    std::cout << ".";
   }
 }
 
@@ -174,23 +226,43 @@ void Game::CheckUpdateTurn()
   if (correctPlayerTilesCount == cpuTiles.size())
   {
     correctPlayerTilesCount = 0;
-    lastTimeDisplayAllTiles = GetTime();
+    lastTime = GetTime();
     DelayTurnSwitch(CPU_TURN);
     isDelayTurnSwitchActive = true;
     AddNewCPUMove();
   }
 }
 
-void Game::DelayTurnSwitch(GameState _gameState)
+void Game::DelayTurnSwitch(GameTurn _gameState)
 {
+  if (!isDelayTurnSwitchActive)
+    return;
+
   double now = GetTime();
-  double duration = 2.0;
-  if (now - lastTimeDisplayAllTiles >= duration)
+  double duration = .8;
+  if (now - lastTime >= duration)
   {
-    lastTimeDisplayAllTiles = GetTime();
-    gameState = _gameState;
+    lastTime = GetTime();
+    gameTurn = _gameState;
     isDelayTurnSwitchActive = false;
-    remainingTimeProgressBar = 10.0;
-    std::cout << "cambio de turno a CPU" << std::endl;
+    progressBar.SetSize((Vector2){GetScreenWidth(), 10});
+    score++;
+    timePerRound = timePerRound + timePerRound * .05;
+    remainingTimeProgressBar = timePerRound;
+    double speedIncrease;
+    if (score < 5)
+    {
+      speedIncrease = .1;
+    }
+    else if (score < 10)
+    {
+      speedIncrease = .09;
+    }
+    else if (score >= 10)
+    {
+      speedIncrease = .06;
+    }
+    turnedOnDuration = turnedOnDuration - turnedOnDuration * speedIncrease;
+    turnedOffDuration = turnedOffDuration - turnedOffDuration * speedIncrease;
   }
 }
